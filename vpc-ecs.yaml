@@ -1,0 +1,349 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Deploy Nginx on AWS Fargate with ALB in ap-northeast-2"
+
+Parameters:
+  VPCCIDR:
+    Type: String
+    Default: "10.20.0.0/16"
+
+  PublicSubnetACIDR:
+    Type: String
+    Default: "10.20.100.0/24"
+
+  PublicSubnetCCIDR:
+    Type: String
+    Default: "10.20.101.0/24"
+
+  PrivateSubnetACIDR:
+    Type: String
+    Default: "10.20.102.0/24"
+
+  PrivateSubnetCCIDR:
+    Type: String
+    Default: "10.20.103.0/24"
+
+  ContainerPort:
+    Type: Number
+    Default: 80
+
+  DesiredCount:
+    Type: Number
+    Default: 2
+
+Resources:
+  # VPC 생성
+  GMSTVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VPCCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: iac-vpc
+
+  # 인터넷 게이트웨이 생성
+  GMSTIGW:
+    Type: AWS::EC2::InternetGateway
+
+  GMSTVPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref GMSTVPC
+      InternetGatewayId: !Ref GMSTIGW
+
+  # 퍼블릭 서브넷 (A)
+  GMSTPublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref GMSTVPC
+      CidrBlock: !Ref PublicSubnetACIDR
+      AvailabilityZone: "ap-northeast-2a"
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: iac-pub-sn-a
+
+  # 퍼블릭 서브넷 (C)
+  GMSTPublicSubnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref GMSTVPC
+      CidrBlock: !Ref PublicSubnetCCIDR
+      AvailabilityZone: "ap-northeast-2c"
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: iac-pub-sn-c
+
+  # 프라이빗 서브넷 (A)
+  GMSTPrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref GMSTVPC
+      CidrBlock: !Ref PrivateSubnetACIDR
+      AvailabilityZone: "ap-northeast-2a"
+      Tags:
+        - Key: Name
+          Value: iac-priv-sn-a
+
+  # 프라이빗 서브넷 (C)
+  GMSTPrivateSubnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref GMSTVPC
+      CidrBlock: !Ref PrivateSubnetCCIDR
+      AvailabilityZone: "ap-northeast-2c"
+      Tags:
+        - Key: Name
+          Value: iac-priv-sn-c
+
+  # Elastic IP for NAT Gateway
+  GMSTEIPA:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  GMSTEIPB:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  # NAT Gateway in Public Subnet A
+  GMSTNATGatewayA:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt GMSTEIPA.AllocationId
+      SubnetId: !Ref GMSTPublicSubnetA
+      Tags:
+        - Key: Name
+          Value: iac-nat-gw-a
+
+  GMSTNATGatewayC:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt GMSTEIPB.AllocationId
+      SubnetId: !Ref GMSTPublicSubnetC
+      Tags:
+        - Key: Name
+          Value: iac-nat-gw-c
+
+  # Route Table for Public Subnets
+  GMSTPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref GMSTVPC
+      Tags:
+        - Key: Name
+          Value: gmst-pub-rt
+
+  # Route for Public Subnets to Internet Gateway
+  GMSTPublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref GMSTPublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref GMSTIGW
+
+  GMSTPublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref GMSTPublicSubnetA
+      RouteTableId: !Ref GMSTPublicRouteTable
+
+  GMSTPublicSubnetCRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref GMSTPublicSubnetC
+      RouteTableId: !Ref GMSTPublicRouteTable
+
+  # Private Route Table for Private Subnet A
+  GMSTPrivateRouteTableA:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref GMSTVPC
+      Tags:
+        - Key: Name
+          Value: gmst-priv-rt-a
+
+  # Route for Private Subnet A to NAT Gateway
+  GMSTPrivateRouteA:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref GMSTPrivateRouteTableA
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref GMSTNATGatewayA
+
+  # Associate Private Subnet A with Private Route Table A
+  GMSTPrivateSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref GMSTPrivateSubnetA
+      RouteTableId: !Ref GMSTPrivateRouteTableA
+
+  # Private Route Table for Private Subnet B
+  GMSTPrivateRouteTableC:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref GMSTVPC
+      Tags:
+        - Key: Name
+          Value: gmst-priv-rt-b
+
+  # Route for Private Subnet B to NAT Gateway
+  GMSTPrivateRouteC:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref GMSTPrivateRouteTableC
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref GMSTNATGatewayC
+
+  # Associate Private Subnet B with Private Route Table B
+  GMSTPrivateSubnetCRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref GMSTPrivateSubnetC
+      RouteTableId: !Ref GMSTPrivateRouteTableC
+
+  # ECS Fargate 클러스터
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: "iac-ecs-cluster"
+
+  # 보안 그룹 (ECS Fargate 컨테이너)
+  ContainerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "ECS Fargate Security Group"
+      VpcId: !Ref GMSTVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: "0.0.0.0/0"
+
+  # ALB (인터넷 접속용)
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: "iac-alb"
+      Subnets:
+        - !Ref GMSTPublicSubnetA
+        - !Ref GMSTPublicSubnetC
+      SecurityGroups:
+        - !Ref ContainerSecurityGroup
+      Scheme: internet-facing
+      Type: application
+
+  # Target Group
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn:
+      - ApplicationLoadBalancer
+    Properties:
+      VpcId: !Ref GMSTVPC
+      Port: !Ref ContainerPort
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckPath: "/"
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+
+  # ALB 리스너 (HTTP 80)
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn:
+      - ALBTargetGroup
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Protocol: HTTP
+      Port: 80
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+
+  # ECS Task Execution Role
+  ECSExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AdministratorAccess"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: "AmazonECSTaskExecutionRolePolicy"
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+
+  # ECS Task Definition
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: "nginx-task"
+      Cpu: "256"
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !Ref ECSExecutionRole
+      ContainerDefinitions:
+        - Name: "nginx-container"
+          Image: "nginx:latest"
+          Cpu: 256
+          Memory: 512
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: "/ecs/nginx"
+              awslogs-region: "ap-northeast-2"
+              awslogs-stream-prefix: "ecs"
+              awslogs-create-group: "true"
+
+  # ECS 서비스
+  ECSService:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - ALBListener
+      - ALBTargetGroup
+    Properties:
+      Cluster: !Ref ECSCluster
+      ServiceName: "iac-nginx-svc"
+      TaskDefinition: !Ref TaskDefinition
+      LaunchType: FARGATE
+      DesiredCount: !Ref DesiredCount
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          SecurityGroups:
+            - !Ref ContainerSecurityGroup
+          Subnets:
+            - !Ref GMSTPrivateSubnetA
+            - !Ref GMSTPrivateSubnetC
+      LoadBalancers:
+        - TargetGroupArn: !Ref ALBTargetGroup
+          ContainerName: "nginx-container"
+          ContainerPort: !Ref ContainerPort
+
+Outputs:
+  LoadBalancerDNS:
+    Description: "The DNS of the ALB"
+    Value: !GetAtt ApplicationLoadBalancer.DNSName

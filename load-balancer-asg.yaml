@@ -1,0 +1,371 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS Infrastructure Setup with ASG, ALB, Target Group, Apache HTTPD, NAT Gateway, and Dedicated Security Groups
+
+Parameters:
+  VPCCIDR:
+    Type: String
+    Default: "10.0.0.0/16"
+  PublicSubnetACIDR:
+    Type: String
+    Default: "10.0.0.0/24"
+  PublicSubnetBCIDR:
+    Type: String
+    Default: "10.0.1.0/24"
+  PrivateSubnetACIDR:
+    Type: String
+    Default: "10.0.10.0/24"
+  PrivateSubnetBCIDR:
+    Type: String
+    Default: "10.0.11.0/24"
+  InstanceType:
+    Type: String
+    Default: "t3.micro"
+    AllowedValues: [t2.micro, t3.micro, t3.small]
+  ImageId:
+    Type: String
+    Description: The AMI ID for the EC2 instances
+    Default: ami-062cddb9d94dcf95d
+  DesiredCapacity:
+    Type: Number
+    Default: 2
+    Description: The number of EC2 instances to launch
+  MaxSize:
+    Type: Number
+    Default: 4
+    Description: The maximum number of EC2 instances that can be launched
+  MinSize:
+    Type: Number
+    Default: 2
+    Description: The minimum number of EC2 instances that must be running
+  BucketName:
+    Type: String
+    Default: gmst-testing-bucket-0410
+  RoleName:
+    Type: String
+    Default: BastionAdminRole
+
+Resources:
+  # VPC
+  GMSTVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VPCCIDR
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+      Tags:
+        - Key: Name
+          Value: gmst-vpc
+
+  # Internet Gateway
+  GMSTIGW:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: gmst-igw
+
+  GMSTVPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref GMSTVPC
+      InternetGatewayId: !Ref GMSTIGW
+
+  # Public Subnets
+  GMSTPublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref GMSTVPC
+      CidrBlock: !Ref PublicSubnetACIDR
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: 'true'
+      Tags:
+        - Key: Name
+          Value: gmst-pub-sub-a
+
+  GMSTPublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref GMSTVPC
+      CidrBlock: !Ref PublicSubnetBCIDR
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: 'true'
+      Tags:
+        - Key: Name
+          Value: gmst-pub-sub-b
+
+  # Private Subnets
+  GMSTPrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref GMSTVPC
+      CidrBlock: !Ref PrivateSubnetACIDR
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: gmst-priv-sub-a
+
+  GMSTPrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref GMSTVPC
+      CidrBlock: !Ref PrivateSubnetBCIDR
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: gmst-priv-sub-b
+
+  # Elastic IP for NAT Gateway
+  GMSTEIPA:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  GMSTEIPB:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  # NAT Gateway in Public Subnet A
+  GMSTNATGatewayA:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt GMSTEIPA.AllocationId
+      SubnetId: !Ref GMSTPublicSubnetA
+      Tags:
+        - Key: Name
+          Value: gmst-nat-gw-a
+
+  GMSTNATGatewayB:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt GMSTEIPB.AllocationId
+      SubnetId: !Ref GMSTPublicSubnetB
+      Tags:
+        - Key: Name
+          Value: gmst-nat-gw-b
+
+  # Route Table for Public Subnets
+  GMSTPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref GMSTVPC
+      Tags:
+        - Key: Name
+          Value: gmst-pub-rt
+
+  # Route for Public Subnets to Internet Gateway
+  GMSTPublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref GMSTPublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref GMSTIGW
+
+  # Associate Public Subnets with Public Route Table
+  GMSTPublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref GMSTPublicSubnetA
+      RouteTableId: !Ref GMSTPublicRouteTable
+
+  GMSTPublicSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref GMSTPublicSubnetB
+      RouteTableId: !Ref GMSTPublicRouteTable
+
+  # Private Route Table for Private Subnet A
+  GMSTPrivateRouteTableA:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref GMSTVPC
+      Tags:
+        - Key: Name
+          Value: gmst-priv-rt-a
+
+  # Route for Private Subnet A to NAT Gateway
+  GMSTPrivateRouteA:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref GMSTPrivateRouteTableA
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref GMSTNATGatewayA
+
+  # Associate Private Subnet A with Private Route Table A
+  GMSTPrivateSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref GMSTPrivateSubnetA
+      RouteTableId: !Ref GMSTPrivateRouteTableA
+
+  # Private Route Table for Private Subnet B
+  GMSTPrivateRouteTableB:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref GMSTVPC
+      Tags:
+        - Key: Name
+          Value: gmst-priv-rt-b
+
+  # Route for Private Subnet B to NAT Gateway
+  GMSTPrivateRouteB:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref GMSTPrivateRouteTableB
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref GMSTNATGatewayB
+
+  # Associate Private Subnet B with Private Route Table B
+  GMSTPrivateSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref GMSTPrivateSubnetB
+      RouteTableId: !Ref GMSTPrivateRouteTableB
+
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      RoleName: !Ref RoleName
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole                
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/AdministratorAccess
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref EC2Role    
+
+  # Security Group for App Servers
+  AppServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Allow HTTP access to App Servers"
+      VpcId: !Ref GMSTVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0  # Allow SSH access for debugging (restrict this in production)
+      Tags:
+        - Key: Name
+          Value: app-server-sg
+
+  # Launch Template for Auto Scaling Group
+  AppServerLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: app-server-launch-template
+      LaunchTemplateData:
+        ImageId: !Ref ImageId
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile: 
+          Name: !Ref InstanceProfile
+        SecurityGroupIds:
+          - !Ref AppServerSecurityGroup
+        UserData: !Base64 |
+          #!/bin/bash
+          sudo yum update -y
+          sudo yum install -y httpd
+          echo "Hello from Auto Scaling Group instance $(hostname)" > /var/www/html/index.html
+          sudo systemctl start httpd
+          sudo systemctl enable httpd
+
+  # Auto Scaling Group
+  AppServerASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: app-server-asg
+      LaunchTemplate:
+        LaunchTemplateId: !Ref AppServerLaunchTemplate
+        Version: !GetAtt AppServerLaunchTemplate.LatestVersionNumber
+      MinSize: !Ref MinSize
+      MaxSize: !Ref MaxSize
+      DesiredCapacity: !Ref DesiredCapacity
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      VPCZoneIdentifier:
+        - !Ref GMSTPrivateSubnetA
+        - !Ref GMSTPrivateSubnetB
+      TargetGroupARNs:
+        - !Ref GMSTTargetGroup
+      Tags:
+        - Key: Name
+          Value: app-server-instance
+          PropagateAtLaunch: true
+
+  # Target Group for ALB
+  GMSTTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: gmst-target-group
+      Protocol: HTTP
+      Port: '80'
+      VpcId: !Ref GMSTVPC
+      TargetType: instance
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: '80'
+      HealthCheckPath: /
+      Matcher:
+        HttpCode: '200'
+
+  # ALB
+  GMSTALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: gmst-alb
+      Subnets:
+        - Ref: GMSTPublicSubnetA
+        - Ref: GMSTPublicSubnetB
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: '60'
+      Scheme: internet-facing
+      Type: application
+      SecurityGroups:
+        - !Ref AppServerSecurityGroup
+
+  GMSTALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref GMSTTargetGroup
+      LoadBalancerArn: !Ref GMSTALB
+      Port: '80'
+      Protocol: HTTP
+
+  Bucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Ref BucketName
+
+Outputs:
+  VPCId:
+    Value: !Ref GMSTVPC
+  PublicSubnetAId:
+    Value: !Ref GMSTPublicSubnetA
+  PublicSubnetBId:
+    Value: !Ref GMSTPublicSubnetB
+  PrivateSubnetAId:
+    Value: !Ref GMSTPrivateSubnetA
+  PrivateSubnetBId:
+    Value: !Ref GMSTPrivateSubnetB
+  LoadBalancerDNSName:
+    Value: !GetAtt GMSTALB.DNSName
+  AutoScalingGroupName:
+    Value: !Ref AppServerASG
