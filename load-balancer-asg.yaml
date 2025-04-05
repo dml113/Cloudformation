@@ -46,7 +46,7 @@ Parameters:
 
 Resources:
   # VPC
-  GMSTVPC:
+  VPC:
     Type: AWS::EC2::VPC
     Properties:
       CidrBlock: !Ref VPCCIDR
@@ -54,173 +54,173 @@ Resources:
       EnableDnsHostnames: 'true'
       Tags:
         - Key: Name
-          Value: gmst-vpc
+          Value: -vpc
 
   # Internet Gateway
-  GMSTIGW:
+  IGW:
     Type: AWS::EC2::InternetGateway
     Properties:
       Tags:
         - Key: Name
-          Value: gmst-igw
+          Value: -igw
 
-  GMSTVPCGatewayAttachment:
+  VPCGatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
-      VpcId: !Ref GMSTVPC
-      InternetGatewayId: !Ref GMSTIGW
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref IGW
 
   # Public Subnets
-  GMSTPublicSubnetA:
+  PublicSubnetA:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref GMSTVPC
+      VpcId: !Ref VPC
       CidrBlock: !Ref PublicSubnetACIDR
       AvailabilityZone: !Select [0, !GetAZs '']
       MapPublicIpOnLaunch: 'true'
       Tags:
         - Key: Name
-          Value: gmst-pub-sub-a
+          Value: -pub-sub-a
 
-  GMSTPublicSubnetB:
+  PublicSubnetB:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref GMSTVPC
+      VpcId: !Ref VPC
       CidrBlock: !Ref PublicSubnetBCIDR
       AvailabilityZone: !Select [1, !GetAZs '']
       MapPublicIpOnLaunch: 'true'
       Tags:
         - Key: Name
-          Value: gmst-pub-sub-b
+          Value: -pub-sub-b
 
   # Private Subnets
-  GMSTPrivateSubnetA:
+  PrivateSubnetA:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref GMSTVPC
+      VpcId: !Ref VPC
       CidrBlock: !Ref PrivateSubnetACIDR
       AvailabilityZone: !Select [0, !GetAZs '']
       Tags:
         - Key: Name
-          Value: gmst-priv-sub-a
+          Value: -priv-sub-a
 
-  GMSTPrivateSubnetB:
+  PrivateSubnetB:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref GMSTVPC
+      VpcId: !Ref VPC
       CidrBlock: !Ref PrivateSubnetBCIDR
       AvailabilityZone: !Select [1, !GetAZs '']
       Tags:
         - Key: Name
-          Value: gmst-priv-sub-b
+          Value: -priv-sub-b
 
   # Elastic IP for NAT Gateway
-  GMSTEIPA:
+  EIPA:
     Type: AWS::EC2::EIP
     Properties:
       Domain: vpc
 
-  GMSTEIPB:
+  EIPB:
     Type: AWS::EC2::EIP
     Properties:
       Domain: vpc
 
   # NAT Gateway in Public Subnet A
-  GMSTNATGatewayA:
+  NATGatewayA:
     Type: AWS::EC2::NatGateway
     Properties:
-      AllocationId: !GetAtt GMSTEIPA.AllocationId
-      SubnetId: !Ref GMSTPublicSubnetA
+      AllocationId: !GetAtt EIPA.AllocationId
+      SubnetId: !Ref PublicSubnetA
       Tags:
         - Key: Name
-          Value: gmst-nat-gw-a
+          Value: -nat-gw-a
 
-  GMSTNATGatewayB:
+  NATGatewayB:
     Type: AWS::EC2::NatGateway
     Properties:
-      AllocationId: !GetAtt GMSTEIPB.AllocationId
-      SubnetId: !Ref GMSTPublicSubnetB
+      AllocationId: !GetAtt EIPB.AllocationId
+      SubnetId: !Ref PublicSubnetB
       Tags:
         - Key: Name
-          Value: gmst-nat-gw-b
+          Value: -nat-gw-b
 
   # Route Table for Public Subnets
-  GMSTPublicRouteTable:
+  PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
-      VpcId: !Ref GMSTVPC
+      VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: gmst-pub-rt
+          Value: -pub-rt
 
   # Route for Public Subnets to Internet Gateway
-  GMSTPublicRoute:
+  PublicRoute:
     Type: AWS::EC2::Route
     Properties:
-      RouteTableId: !Ref GMSTPublicRouteTable
+      RouteTableId: !Ref PublicRouteTable
       DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref GMSTIGW
+      GatewayId: !Ref IGW
 
   # Associate Public Subnets with Public Route Table
-  GMSTPublicSubnetARouteTableAssociation:
+  PublicSubnetARouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      SubnetId: !Ref GMSTPublicSubnetA
-      RouteTableId: !Ref GMSTPublicRouteTable
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
 
-  GMSTPublicSubnetBRouteTableAssociation:
+  PublicSubnetBRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      SubnetId: !Ref GMSTPublicSubnetB
-      RouteTableId: !Ref GMSTPublicRouteTable
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
 
   # Private Route Table for Private Subnet A
-  GMSTPrivateRouteTableA:
+  PrivateRouteTableA:
     Type: AWS::EC2::RouteTable
     Properties:
-      VpcId: !Ref GMSTVPC
+      VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: gmst-priv-rt-a
+          Value: -priv-rt-a
 
   # Route for Private Subnet A to NAT Gateway
-  GMSTPrivateRouteA:
+  PrivateRouteA:
     Type: AWS::EC2::Route
     Properties:
-      RouteTableId: !Ref GMSTPrivateRouteTableA
+      RouteTableId: !Ref PrivateRouteTableA
       DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref GMSTNATGatewayA
+      NatGatewayId: !Ref NATGatewayA
 
   # Associate Private Subnet A with Private Route Table A
-  GMSTPrivateSubnetARouteTableAssociation:
+  PrivateSubnetARouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      SubnetId: !Ref GMSTPrivateSubnetA
-      RouteTableId: !Ref GMSTPrivateRouteTableA
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRouteTableA
 
   # Private Route Table for Private Subnet B
-  GMSTPrivateRouteTableB:
+  PrivateRouteTableB:
     Type: AWS::EC2::RouteTable
     Properties:
-      VpcId: !Ref GMSTVPC
+      VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: gmst-priv-rt-b
+          Value: -priv-rt-b
 
   # Route for Private Subnet B to NAT Gateway
-  GMSTPrivateRouteB:
+  PrivateRouteB:
     Type: AWS::EC2::Route
     Properties:
-      RouteTableId: !Ref GMSTPrivateRouteTableB
+      RouteTableId: !Ref PrivateRouteTableB
       DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref GMSTNATGatewayB
+      NatGatewayId: !Ref NATGatewayB
 
   # Associate Private Subnet B with Private Route Table B
-  GMSTPrivateSubnetBRouteTableAssociation:
+  PrivateSubnetBRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      SubnetId: !Ref GMSTPrivateSubnetB
-      RouteTableId: !Ref GMSTPrivateRouteTableB
+      SubnetId: !Ref PrivateSubnetB
+      RouteTableId: !Ref PrivateRouteTableB
 
   EC2Role:
     Type: AWS::IAM::Role
@@ -251,7 +251,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: "Allow HTTP access to App Servers"
-      VpcId: !Ref GMSTVPC
+      VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
@@ -299,23 +299,23 @@ Resources:
       HealthCheckType: ELB
       HealthCheckGracePeriod: 300
       VPCZoneIdentifier:
-        - !Ref GMSTPrivateSubnetA
-        - !Ref GMSTPrivateSubnetB
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetB
       TargetGroupARNs:
-        - !Ref GMSTTargetGroup
+        - !Ref TargetGroup
       Tags:
         - Key: Name
           Value: app-server-instance
           PropagateAtLaunch: true
 
   # Target Group for ALB
-  GMSTTargetGroup:
+  TargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: gmst-target-group
+      Name: -target-group
       Protocol: HTTP
       Port: '80'
-      VpcId: !Ref GMSTVPC
+      VpcId: !Ref VPC
       TargetType: instance
       HealthCheckProtocol: HTTP
       HealthCheckPort: '80'
@@ -324,13 +324,13 @@ Resources:
         HttpCode: '200'
 
   # ALB
-  GMSTALB:
+  ALB:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Name: gmst-alb
+      Name: -alb
       Subnets:
-        - Ref: GMSTPublicSubnetA
-        - Ref: GMSTPublicSubnetB
+        - Ref: PublicSubnetA
+        - Ref: PublicSubnetB
       LoadBalancerAttributes:
         - Key: idle_timeout.timeout_seconds
           Value: '60'
@@ -339,13 +339,13 @@ Resources:
       SecurityGroups:
         - !Ref AppServerSecurityGroup
 
-  GMSTALBListener:
+  ALBListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
       DefaultActions:
         - Type: forward
-          TargetGroupArn: !Ref GMSTTargetGroup
-      LoadBalancerArn: !Ref GMSTALB
+          TargetGroupArn: !Ref TargetGroup
+      LoadBalancerArn: !Ref ALB
       Port: '80'
       Protocol: HTTP
 
@@ -356,16 +356,16 @@ Resources:
 
 Outputs:
   VPCId:
-    Value: !Ref GMSTVPC
+    Value: !Ref VPC
   PublicSubnetAId:
-    Value: !Ref GMSTPublicSubnetA
+    Value: !Ref PublicSubnetA
   PublicSubnetBId:
-    Value: !Ref GMSTPublicSubnetB
+    Value: !Ref PublicSubnetB
   PrivateSubnetAId:
-    Value: !Ref GMSTPrivateSubnetA
+    Value: !Ref PrivateSubnetA
   PrivateSubnetBId:
-    Value: !Ref GMSTPrivateSubnetB
+    Value: !Ref PrivateSubnetB
   LoadBalancerDNSName:
-    Value: !GetAtt GMSTALB.DNSName
+    Value: !GetAtt ALB.DNSName
   AutoScalingGroupName:
     Value: !Ref AppServerASG

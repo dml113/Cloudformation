@@ -32,7 +32,7 @@ Parameters:
 
 Resources:
   # VPC 생성
-  GMSTVPC:
+  VPC:
     Type: AWS::EC2::VPC
     Properties:
       CidrBlock: !Ref VPCCIDR
@@ -43,20 +43,20 @@ Resources:
           Value: iac-vpc
 
   # 인터넷 게이트웨이 생성
-  GMSTIGW:
+  IGW:
     Type: AWS::EC2::InternetGateway
 
-  GMSTVPCGatewayAttachment:
+  VPCGatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
-      VpcId: !Ref GMSTVPC
-      InternetGatewayId: !Ref GMSTIGW
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref IGW
 
   # 퍼블릭 서브넷 (A)
-  GMSTPublicSubnetA:
+  PublicSubnetA:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref GMSTVPC
+      VpcId: !Ref VPC
       CidrBlock: !Ref PublicSubnetACIDR
       AvailabilityZone: "ap-northeast-2a"
       MapPublicIpOnLaunch: true
@@ -65,10 +65,10 @@ Resources:
           Value: iac-pub-sn-a
 
   # 퍼블릭 서브넷 (C)
-  GMSTPublicSubnetC:
+  PublicSubnetC:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref GMSTVPC
+      VpcId: !Ref VPC
       CidrBlock: !Ref PublicSubnetCCIDR
       AvailabilityZone: "ap-northeast-2c"
       MapPublicIpOnLaunch: true
@@ -77,10 +77,10 @@ Resources:
           Value: iac-pub-sn-c
 
   # 프라이빗 서브넷 (A)
-  GMSTPrivateSubnetA:
+  PrivateSubnetA:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref GMSTVPC
+      VpcId: !Ref VPC
       CidrBlock: !Ref PrivateSubnetACIDR
       AvailabilityZone: "ap-northeast-2a"
       Tags:
@@ -88,10 +88,10 @@ Resources:
           Value: iac-priv-sn-a
 
   # 프라이빗 서브넷 (C)
-  GMSTPrivateSubnetC:
+  PrivateSubnetC:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref GMSTVPC
+      VpcId: !Ref VPC
       CidrBlock: !Ref PrivateSubnetCCIDR
       AvailabilityZone: "ap-northeast-2c"
       Tags:
@@ -99,111 +99,111 @@ Resources:
           Value: iac-priv-sn-c
 
   # Elastic IP for NAT Gateway
-  GMSTEIPA:
+  EIPA:
     Type: AWS::EC2::EIP
     Properties:
       Domain: vpc
 
-  GMSTEIPB:
+  EIPB:
     Type: AWS::EC2::EIP
     Properties:
       Domain: vpc
 
   # NAT Gateway in Public Subnet A
-  GMSTNATGatewayA:
+  NATGatewayA:
     Type: AWS::EC2::NatGateway
     Properties:
-      AllocationId: !GetAtt GMSTEIPA.AllocationId
-      SubnetId: !Ref GMSTPublicSubnetA
+      AllocationId: !GetAtt EIPA.AllocationId
+      SubnetId: !Ref PublicSubnetA
       Tags:
         - Key: Name
           Value: iac-nat-gw-a
 
-  GMSTNATGatewayC:
+  NATGatewayC:
     Type: AWS::EC2::NatGateway
     Properties:
-      AllocationId: !GetAtt GMSTEIPB.AllocationId
-      SubnetId: !Ref GMSTPublicSubnetC
+      AllocationId: !GetAtt EIPB.AllocationId
+      SubnetId: !Ref PublicSubnetC
       Tags:
         - Key: Name
           Value: iac-nat-gw-c
 
   # Route Table for Public Subnets
-  GMSTPublicRouteTable:
+  PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
-      VpcId: !Ref GMSTVPC
+      VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: gmst-pub-rt
+          Value: -pub-rt
 
   # Route for Public Subnets to Internet Gateway
-  GMSTPublicRoute:
+  PublicRoute:
     Type: AWS::EC2::Route
     Properties:
-      RouteTableId: !Ref GMSTPublicRouteTable
+      RouteTableId: !Ref PublicRouteTable
       DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref GMSTIGW
+      GatewayId: !Ref IGW
 
-  GMSTPublicSubnetARouteTableAssociation:
+  PublicSubnetARouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      SubnetId: !Ref GMSTPublicSubnetA
-      RouteTableId: !Ref GMSTPublicRouteTable
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
 
-  GMSTPublicSubnetCRouteTableAssociation:
+  PublicSubnetCRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      SubnetId: !Ref GMSTPublicSubnetC
-      RouteTableId: !Ref GMSTPublicRouteTable
+      SubnetId: !Ref PublicSubnetC
+      RouteTableId: !Ref PublicRouteTable
 
   # Private Route Table for Private Subnet A
-  GMSTPrivateRouteTableA:
+  PrivateRouteTableA:
     Type: AWS::EC2::RouteTable
     Properties:
-      VpcId: !Ref GMSTVPC
+      VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: gmst-priv-rt-a
+          Value: -priv-rt-a
 
   # Route for Private Subnet A to NAT Gateway
-  GMSTPrivateRouteA:
+  PrivateRouteA:
     Type: AWS::EC2::Route
     Properties:
-      RouteTableId: !Ref GMSTPrivateRouteTableA
+      RouteTableId: !Ref PrivateRouteTableA
       DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref GMSTNATGatewayA
+      NatGatewayId: !Ref NATGatewayA
 
   # Associate Private Subnet A with Private Route Table A
-  GMSTPrivateSubnetARouteTableAssociation:
+  PrivateSubnetARouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      SubnetId: !Ref GMSTPrivateSubnetA
-      RouteTableId: !Ref GMSTPrivateRouteTableA
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRouteTableA
 
   # Private Route Table for Private Subnet B
-  GMSTPrivateRouteTableC:
+  PrivateRouteTableC:
     Type: AWS::EC2::RouteTable
     Properties:
-      VpcId: !Ref GMSTVPC
+      VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: gmst-priv-rt-b
+          Value: -priv-rt-b
 
   # Route for Private Subnet B to NAT Gateway
-  GMSTPrivateRouteC:
+  PrivateRouteC:
     Type: AWS::EC2::Route
     Properties:
-      RouteTableId: !Ref GMSTPrivateRouteTableC
+      RouteTableId: !Ref PrivateRouteTableC
       DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref GMSTNATGatewayC
+      NatGatewayId: !Ref NATGatewayC
 
   # Associate Private Subnet B with Private Route Table B
-  GMSTPrivateSubnetCRouteTableAssociation:
+  PrivateSubnetCRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      SubnetId: !Ref GMSTPrivateSubnetC
-      RouteTableId: !Ref GMSTPrivateRouteTableC
+      SubnetId: !Ref PrivateSubnetC
+      RouteTableId: !Ref PrivateRouteTableC
 
   # ECS Fargate 클러스터
   ECSCluster:
@@ -216,7 +216,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: "ECS Fargate Security Group"
-      VpcId: !Ref GMSTVPC
+      VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
@@ -229,8 +229,8 @@ Resources:
     Properties:
       Name: "iac-alb"
       Subnets:
-        - !Ref GMSTPublicSubnetA
-        - !Ref GMSTPublicSubnetC
+        - !Ref PublicSubnetA
+        - !Ref PublicSubnetC
       SecurityGroups:
         - !Ref ContainerSecurityGroup
       Scheme: internet-facing
@@ -242,7 +242,7 @@ Resources:
     DependsOn:
       - ApplicationLoadBalancer
     Properties:
-      VpcId: !Ref GMSTVPC
+      VpcId: !Ref VPC
       Port: !Ref ContainerPort
       Protocol: HTTP
       TargetType: ip
@@ -336,8 +336,8 @@ Resources:
           SecurityGroups:
             - !Ref ContainerSecurityGroup
           Subnets:
-            - !Ref GMSTPrivateSubnetA
-            - !Ref GMSTPrivateSubnetC
+            - !Ref PrivateSubnetA
+            - !Ref PrivateSubnetC
       LoadBalancers:
         - TargetGroupArn: !Ref ALBTargetGroup
           ContainerName: "nginx-container"

@@ -1,0 +1,240 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Deploy Nginx on AWS Fargate with ALB in ap-northeast-2 (Fully Parameterized Naming)"
+
+Parameters:
+  # Naming Parameters
+  VPCName:
+    Type: String
+    Default: "iac-vpc"
+  
+  IGWName:
+    Type: String
+    Default: "iac-igw"
+  
+  NATGatewayAName:
+    Type: String
+    Default: "iac-nat-gw-a"
+  
+  NATGatewayCName:
+    Type: String
+    Default: "iac-nat-gw-c"
+  
+  PublicSubnetAName:
+    Type: String
+    Default: "iac-pub-sn-a"
+  
+  PublicSubnetCName:
+    Type: String
+    Default: "iac-pub-sn-c"
+  
+  PrivateSubnetAName:
+    Type: String
+    Default: "iac-priv-sn-a"
+  
+  PrivateSubnetCName:
+    Type: String
+    Default: "iac-priv-sn-c"
+  
+  PublicRouteTableName:
+    Type: String
+    Default: "iac-pub-rt"
+  
+  PrivateRouteTableAName:
+    Type: String
+    Default: "iac-priv-rt-a"
+  
+  PrivateRouteTableCName:
+    Type: String
+    Default: "iac-priv-rt-c"
+
+  # Network Configuration
+  VPCCIDR:
+    Type: String
+    Default: "10.20.0.0/16"
+
+  PublicSubnetACIDR:
+    Type: String
+    Default: "10.20.100.0/24"
+
+  PublicSubnetCCIDR:
+    Type: String
+    Default: "10.20.101.0/24"
+
+  PrivateSubnetACIDR:
+    Type: String
+    Default: "10.20.102.0/24"
+
+  PrivateSubnetCCIDR:
+    Type: String
+    Default: "10.20.103.0/24"
+
+Resources:
+  # VPC
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VPCCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Ref VPCName
+
+  # Internet Gateway
+  IGW:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Ref IGWName
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref IGW
+
+  # Public Subnets
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnetACIDR
+      AvailabilityZone: "ap-northeast-2a"
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Ref PublicSubnetAName
+
+  PublicSubnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnetCCIDR
+      AvailabilityZone: "ap-northeast-2c"
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Ref PublicSubnetCName
+
+  # Private Subnets
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnetACIDR
+      AvailabilityZone: "ap-northeast-2a"
+      Tags:
+        - Key: Name
+          Value: !Ref PrivateSubnetAName
+
+  PrivateSubnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnetCCIDR
+      AvailabilityZone: "ap-northeast-2c"
+      Tags:
+        - Key: Name
+          Value: !Ref PrivateSubnetCName
+
+  # Elastic IPs
+  EIPA:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  EIPB:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  # NAT Gateways
+  NATGatewayA:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt EIPA.AllocationId
+      SubnetId: !Ref PublicSubnetA
+      Tags:
+        - Key: Name
+          Value: !Ref NATGatewayAName
+
+  NATGatewayC:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt EIPB.AllocationId
+      SubnetId: !Ref PublicSubnetC
+      Tags:
+        - Key: Name
+          Value: !Ref NATGatewayCName
+
+  # Public Route Table
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Ref PublicRouteTableName
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref IGW
+
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetCRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetC
+      RouteTableId: !Ref PublicRouteTable
+
+  # Private Route Tables
+  PrivateRouteTableA:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Ref PrivateRouteTableAName
+
+  PrivateRouteA:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableA
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGatewayA
+
+  PrivateSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRouteTableA
+
+  PrivateRouteTableC:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Ref PrivateRouteTableCName
+
+  PrivateRouteC:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableC
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGatewayC
+
+  PrivateSubnetCRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetC
+      RouteTableId: !Ref PrivateRouteTableC
