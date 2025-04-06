@@ -29,7 +29,7 @@ Parameters:
     Default: "10.0.1.0/24"
 
   BucketName:
-    Type: String   
+    Type: String
 
 Resources:
   # VPC
